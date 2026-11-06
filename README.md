@@ -16,6 +16,8 @@ The game is a single web page (`www/index.html`) inside a native iOS shell built
 | `scripts/setup-store.mjs` | Registers the bundle ID and creates the Game Center leaderboard |
 | `.github/workflows/setup-store.yml` | **Set up App Store Connect** (run by hand) |
 | `.github/workflows/testflight.yml` | **Build and upload to TestFlight** (run by hand) |
+| `.github/workflows/store-listing.yml` | **Update App Store listing**: text, category, screenshots from `store/` |
+| `.github/workflows/create-achievements.yml` | **Create Game Center achievements** from `store/achievements.json` |
 
 ## App settings
 
@@ -23,7 +25,7 @@ The game is a single web page (`www/index.html`) inside a native iOS shell built
 - **Name:** Micro Mayhem
 - **Devices:** iPhone only, portrait only
 - **Minimum iOS:** 15
-- **Capabilities:** Game Center (one leaderboard: `micromayhem.highscore`, best score, high to low)
+- **Capabilities:** Game Center (one leaderboard: `micromayhem.highscore`, best score, high to low; 8 achievements, 300 points, listed in `store/achievements.json`)
 
 ## Repository secrets
 

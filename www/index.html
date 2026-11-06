@@ -155,9 +155,21 @@ if(NP.NativeMotion){try{NP.NativeMotion.addListener('motion',d=>{M.live=true;M.g
   const now=performance.now(),sg=Math.sign(d.ax);if(Math.abs(d.ax)>0.9&&sg!==M.lastSign&&now-M.lastKick>70){M.lastSign=sg;M.lastKick=now;M.kicks++}})}catch(e){}}
 const Motion={start(){if(NP.NativeMotion&&!M.on){M.on=true;NP.NativeMotion.start().catch(()=>{})}},stop(){if(NP.NativeMotion&&M.on){M.on=false;M.live=false;NP.NativeMotion.stop().catch(()=>{})}}};
 const GC={ready:false,
-  auth(){if(!NP.GameCenter)return;NP.GameCenter.authenticate().then(r=>{GC.ready=!!(r&&r.authenticated)}).catch(()=>{})},
+  auth(){if(!NP.GameCenter)return;NP.GameCenter.authenticate().then(r=>{GC.ready=!!(r&&r.authenticated);if(GC.ready)Ach.resend()}).catch(()=>{})},
   submit(score){if(NP.GameCenter&&score>0)NP.GameCenter.submitScore({leaderboardId:LEADERBOARD,score}).catch(()=>{})},
   show(){if(NP.GameCenter)NP.GameCenter.showLeaderboard({leaderboardId:LEADERBOARD}).catch(()=>{})}};
+// Achievements: earned ones are kept on the phone and (re)sent to Game Center until Apple confirms them.
+const ACH={firstrun:'micromayhem.firstrun',stage5:'micromayhem.stage5',maxspeed:'micromayhem.maxspeed',flawless:'micromayhem.flawless',
+  score50:'micromayhem.score50',score100:'micromayhem.score100',collector:'micromayhem.collector',handsoff:'micromayhem.handsoff'};
+const jsonSet=k=>{try{return new Set(JSON.parse(Store.get(k)||'[]'))}catch(e){return new Set()}};
+const Ach={earned:jsonSet('mm-ach'),sent:jsonSet('mm-ach-sent'),won:jsonSet('mm-won'),hands:+(Store.get('mm-notouch')||0)||0,
+  save(){Store.set('mm-ach',JSON.stringify([...this.earned]));Store.set('mm-ach-sent',JSON.stringify([...this.sent]))},
+  send(id){if(!NP.GameCenter||this.sent.has(id))return;NP.GameCenter.reportAchievement({achievementId:id}).then(r=>{if(r&&r.reported){this.sent.add(id);this.save()}}).catch(()=>{})},
+  unlock(key){const id=ACH[key];if(!id||this.earned.has(id))return;this.earned.add(id);this.save();this.send(id)},
+  resend(){for(const id of this.earned)this.send(id)},
+  gameWon(id){if(!this.won.has(id)){this.won.add(id);Store.set('mm-won',JSON.stringify([...this.won]))}
+    if(id==='notouch'){this.hands++;Store.set('mm-notouch',this.hands);if(this.hands>=10)this.unlock('handsoff')}
+    if(GAMES.every(g=>this.won.has(g.id)))this.unlock('collector')}};
 const W=360,H=600;
 const C={y:'#FFE34B',pk:'#FF4D6D',bl:'#2D8CFF',mt:'#36DEBB',pu:'#8B5CF6',or:'#FF9F3D',cr:'#FFF8E9',ink:'#17121F',
   red:'#EE3A43',gold:'#FFC52E',brown:'#8A5532',skin:'#F6C59E',grey:'#B8C0CC',white:'#FFFFFF',green:'#2FB352',tea:'#9A5B2E'};
@@ -714,16 +726,16 @@ function startNext(){const def=nextDef();run.last=def;const s={T:0};fx=[];G={def
  G.win=()=>{if(G.res)return;G.res='win';buzz('win');G.msg=pick(['NICE!','MAYHEM!','BOOM!','YES!','NAILED IT!']);G.resT=G.t;G.endAt=G.t+.75;confetti(180,290,26);sfx('win')};
  G.lose=(m)=>{if(G.res)return;G.res='lose';buzz('lose');G.msg=m||pick(['NOPE!','WHOOPS!']);G.resT=G.t;G.endAt=G.t+.9;if(shakeT<.2)shakeT=.22;sfx('lose')};
  if(def.motion)Motion.start();else Motion.stop();def.init(s,G);mode='play';hud()}
-function startRun(){run={lives:LIVES,score:0,played:0,stage:0,speed:1,deck:[],last:null};hud();
+function startRun(){run={lives:LIVES,score:0,played:0,stage:0,speed:1,deck:[],last:null,stageLives:LIVES};hud();
  document.getElementById('menu').hidden=true;document.getElementById('over').hidden=true;mode='go';goT=0;sfx('up')}
 function finish(){Motion.stop();
  if(run.test){const k=run.test.id+'@'+run.speed,r=tstats[k]||(tstats[k]=[0,0]);r[1]++;if(G.res==='win'){r[0]++;run.score++}saveStats();hud();
   mode='testres';document.getElementById('tres').innerHTML='<b>'+run.test.verb+'</b> at '+run.speed+'× · '+(G.res==='win'?'won':'lost')+'<br>This speed: '+r[0]+' / '+r[1]+' won';document.getElementById('testbar').hidden=false;return}
- if(G.res==='win')run.score++;else run.lives--;run.played++;
- if(run.lives<=0){mode='over';GC.submit(run.score);if(run.score>bestScore){bestScore=run.score;Store.set('mm-best',bestScore);buzz('best')}
+ if(G.res==='win'){run.score++;Ach.gameWon(G.def.id);if(run.score>=50)Ach.unlock('score50');if(run.score>=100)Ach.unlock('score100')}else run.lives--;run.played++;
+ if(run.lives<=0){mode='over';GC.submit(run.score);Ach.unlock('firstrun');if(run.score>bestScore){bestScore=run.score;Store.set('mm-best',bestScore);buzz('best')}
   document.getElementById('finalScore').textContent=run.score;document.getElementById('finalStage').textContent=run.stage+1;document.getElementById('finalBest').textContent=bestScore;
   document.getElementById('overTitle').textContent=run.score>=bestScore&&run.score>0?'NEW BEST!':'GAME OVER!';bestLabels();hud();document.getElementById('over').hidden=false;return}
- if(run.played%5===0){run.stage++;run.speed=Math.min(2.6,1+.2*run.stage);hud();mode='banner';bannerT=0;sfx('up')}else startNext()}
+ if(run.played%5===0){if(run.lives===run.stageLives)Ach.unlock('flawless');run.stage++;run.stageLives=run.lives;if(run.stage>=4)Ach.unlock('stage5');if(run.stage>=8)Ach.unlock('maxspeed');run.speed=Math.min(2.6,1+.2*run.stage);hud();mode='banner';bannerT=0;sfx('up')}else startNext()}
 
 // ---------- input ----------
 const ptr={down:false,x:0,y:0,px:0,py:0,sx:0,sy:0,vx:0,vy:0,lt:0};
@@ -763,7 +775,8 @@ function startTest(d){try{ac=ac||new (window.AudioContext||window.webkitAudioCon
 {let taps=[];document.querySelector('.logo').addEventListener('click',()=>{const now=Date.now();taps=taps.filter(t=>now-t<2000);taps.push(now);if(taps.length>=5){taps=[];openTester()}})}
 document.getElementById('bestMenu').addEventListener('click',()=>{buzz('tap');GC.show()});
 // Restore saved best score and tester tallies from native storage (survives iOS clearing web storage).
-if(NP.Preferences){Promise.all(['mm-best','mm-test'].map(k=>NP.Preferences.get({key:k}).then(r=>r&&r.value).catch(()=>null))).then(([b,t])=>{
+if(NP.Preferences){Promise.all(['mm-best','mm-test','mm-ach','mm-ach-sent','mm-won','mm-notouch'].map(k=>NP.Preferences.get({key:k}).then(r=>r&&r.value).catch(()=>null))).then(([b,t,ae,as,aw,an])=>{
+  const merge=(v,set)=>{try{for(const x of JSON.parse(v||'[]'))set.add(x)}catch(e){}};merge(ae,Ach.earned);merge(as,Ach.sent);merge(aw,Ach.won);if(an&&+an>Ach.hands)Ach.hands=+an;Ach.save();if(GC.ready)Ach.resend();
   if(b!=null&&+b>bestScore){bestScore=+b;try{localStorage.setItem('mm-best',bestScore)}catch(e){}bestLabels()}
   if(t){try{const o=JSON.parse(t);if(o&&typeof o==='object'){tstats=Object.assign(o,tstats);}}catch(e){}}})}
 GC.auth();

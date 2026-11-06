@@ -1,0 +1,14 @@
+{
+  "bundleId": "com.bishimitsu.micromayhem",
+  "locale": "en-GB",
+  "achievements": [
+    { "id": "micromayhem.firstrun",  "referenceName": "First run",  "points": 10, "title": "First Mayhem",  "before": "Finish your first run.",                         "after": "You finished your first run of Micro Mayhem.",        "image": "store/achievements/firstrun.png" },
+    { "id": "micromayhem.stage5",    "referenceName": "Stage 5",    "points": 20, "title": "Speed Demon",   "before": "Reach stage 5 in a single run.",                 "after": "You reached stage 5.",                                 "image": "store/achievements/stage5.png" },
+    { "id": "micromayhem.maxspeed",  "referenceName": "Top speed",  "points": 50, "title": "Max Chaos",     "before": "Reach top speed: stage 9 in a single run.",     "after": "You reached top speed.",                               "image": "store/achievements/maxspeed.png" },
+    { "id": "micromayhem.flawless",  "referenceName": "Flawless",   "points": 30, "title": "Flawless",      "before": "Clear a whole stage without losing a heart.",   "after": "You cleared a stage without losing a heart.",          "image": "store/achievements/flawless.png" },
+    { "id": "micromayhem.score50",   "referenceName": "Score 50",   "points": 30, "title": "Half Century",  "before": "Win 50 games in a single run.",                 "after": "You won 50 games in one run.",                          "image": "store/achievements/score50.png" },
+    { "id": "micromayhem.score100",  "referenceName": "Score 100",  "points": 60, "title": "Centurion",     "before": "Win 100 games in a single run.",                "after": "You won 100 games in one run.",                         "image": "store/achievements/score100.png" },
+    { "id": "micromayhem.collector", "referenceName": "Collector",  "points": 80, "title": "Collector",     "before": "Win every one of the 33 games at least once.",  "after": "You have won every game in Micro Mayhem.",             "image": "store/achievements/collector.png" },
+    { "id": "micromayhem.handsoff",  "referenceName": "Hands off",  "points": 20, "title": "Hands Off",     "before": "Win DON'T TOUCH! 10 times.",                     "after": "You kept your hands off 10 times.",                    "image": "store/achievements/handsoff.png" }
+  ]
+}
