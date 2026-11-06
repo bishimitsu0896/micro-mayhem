@@ -1,11 +1,22 @@
 import UIKit
 import Capacitor
 import GameKit
+import CoreMotion
+import AVFoundation
 
 /// Hosts the web game full screen in portrait and registers the Game Center plugin below.
 class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(GameCenterPlugin())
+        bridge?.registerPluginInstance(MotionPlugin())
+        // Game audio: respect the silent switch and mix with whatever the player is listening to.
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [])
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Rounds are short and touch-driven; never let the screen dim mid-game.
+        UIApplication.shared.isIdleTimerDisabled = true
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -14,7 +25,9 @@ class MainViewController: CAPBridgeViewController {
     }
     // Status bar and home indicator are hidden by Capacitor's SystemBars
     // setting in capacitor.config.json.
-    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .bottom }
+    // Fast swipes near the edges (Wake Up, Flip It, Roll It) must not pull down
+    // Notification Centre or go home on the first swipe.
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { [.top, .bottom] }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
 }
 
@@ -143,6 +156,46 @@ final class GameCenterAuth {
             let once: (Bool) -> Void = { ok in if !called { called = true; done(ok) } }
             self.waiters.append(once)
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) { once(GKLocalPlayer.local.isAuthenticated) }
+        }
+    }
+}
+
+/// Streams CoreMotion data to the web game for tilt and shake microgames.
+/// JS: Capacitor.Plugins.NativeMotion.start() / stop(); addListener('motion', {gx, gy, ax, ay, az})
+/// gx/gy are gravity (in g, -1...1); ax/ay/az are user acceleration (in g). No permission prompt is needed.
+@objc(MotionPlugin)
+public class MotionPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "MotionPlugin"
+    public let jsName = "NativeMotion"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise)
+    ]
+    private let manager = CMMotionManager()
+
+    @objc func start(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard self.manager.isDeviceMotionAvailable else {
+                call.resolve(["available": false]); return
+            }
+            if !self.manager.isDeviceMotionActive {
+                self.manager.deviceMotionUpdateInterval = 1.0 / 60.0
+                self.manager.startDeviceMotionUpdates(to: OperationQueue.main) { [weak self] motion, _ in
+                    guard let self = self, let m = motion else { return }
+                    self.notifyListeners("motion", data: [
+                        "gx": m.gravity.x, "gy": m.gravity.y,
+                        "ax": m.userAcceleration.x, "ay": m.userAcceleration.y, "az": m.userAcceleration.z
+                    ])
+                }
+            }
+            call.resolve(["available": true])
+        }
+    }
+
+    @objc func stop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            if self.manager.isDeviceMotionActive { self.manager.stopDeviceMotionUpdates() }
+            call.resolve()
         }
     }
 }
