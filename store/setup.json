@@ -1,0 +1,12 @@
+{
+  "bundleId": "com.bishimitsu.micromayhem",
+  "appName": "Micro Mayhem",
+  "locale": "en-GB",
+  "leaderboard": {
+    "id": "micromayhem.highscore",
+    "referenceName": "High score",
+    "name": "High Score",
+    "suffixSingular": " game",
+    "suffixPlural": " games"
+  }
+}

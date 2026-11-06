@@ -1,0 +1,99 @@
+name: Build and upload to TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use the newest Xcode on the runner
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -v beta | sort -V | tail -1)
+          echo "Using $XC"
+          sudo xcode-select -s "$XC"
+          echo "::notice::$(xcodebuild -version | tr '\n' ' ')"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install and sync the web game into the iOS project
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Write the App Store Connect API key
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey.p8"
+          echo "KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: Look up the team ID
+        run: |
+          TEAM_ID=$(node scripts/team-id.mjs)
+          echo "Team $TEAM_ID"
+          echo "TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+
+      # Build with a placeholder (ad-hoc) signature so the Game Center entitlement
+      # is embedded; the export step re-signs it for the App Store with a
+      # cloud-managed distribution certificate (no test devices needed).
+      - name: Archive
+        run: |
+          mkdir -p build
+          set +e
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO PROVISIONING_PROFILE_SPECIFIER= \
+            archive > build/archive.log 2>&1
+          STATUS=$?
+          set -e
+          tail -n 80 build/archive.log
+          if [ $STATUS -ne 0 ] || [ ! -d build/App.xcarchive ]; then
+            node scripts/report-errors.mjs build/archive.log
+            exit 1
+          fi
+          ENT=$(codesign -d --entitlements - --xml build/App.xcarchive/Products/Applications/App.app 2>/dev/null || true)
+          echo "$ENT"
+          if echo "$ENT" | grep -q "com.apple.developer.game-center"; then
+            echo "::notice::Game Center entitlement is in the build"
+          else
+            echo "::error::Game Center entitlement missing from the build"; exit 1
+          fi
+
+      - name: Upload to App Store Connect
+        run: |
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          set +e
+          xcodebuild -exportArchive -archivePath build/App.xcarchive \
+            -exportOptionsPlist build/ExportOptions.plist -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            > build/export.log 2>&1
+          STATUS=$?
+          set -e
+          tail -n 60 build/export.log
+          if [ $STATUS -ne 0 ]; then node scripts/report-errors.mjs build/export.log; exit 1; fi
+          echo "::notice::Uploaded build $BUILD_NUMBER to App Store Connect"
