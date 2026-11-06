@@ -179,7 +179,7 @@ public class MotionPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["available": false]); return
             }
             if !self.manager.isDeviceMotionActive {
-                self.manager.deviceMotionUpdateInterval = 1.0 / 60.0
+                self.manager.deviceMotionUpdateInterval = 1.0 / 30.0
                 self.manager.startDeviceMotionUpdates(to: OperationQueue.main) { [weak self] motion, _ in
                     guard let self = self, let m = motion else { return }
                     self.notifyListeners("motion", data: [

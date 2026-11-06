@@ -177,8 +177,14 @@ const INK=C.ink;
 const RM=window.matchMedia?matchMedia('(prefers-reduced-motion: reduce)').matches:false;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let scale=1,ox=0,oy=0,dpr=1,clock=0;
-function resize(){const r=cv.getBoundingClientRect();dpr=Math.min(3,window.devicePixelRatio||1);cv.width=r.width*dpr;cv.height=r.height*dpr;scale=Math.min(r.width/W,r.height/H);ox=(r.width-W*scale)/2;oy=r.height-H*scale;}
-window.addEventListener('resize',resize);resize();
+let cssW=0,cssH=0,dotsLayer=null;
+function resize(){const r=cv.getBoundingClientRect();if(!r.width||!r.height)return;cssW=cv.clientWidth;cssH=cv.clientHeight;
+  // 2x is visually identical at game speed and draws ~2.25x fewer pixels than 3x
+  dpr=Math.min(2,window.devicePixelRatio||1);cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);
+  scale=Math.min(r.width/W,r.height/H);ox=(r.width-W*scale)/2;oy=r.height-H*scale;dotsLayer=null}
+window.addEventListener('resize',resize);window.addEventListener('orientationchange',()=>setTimeout(resize,50));
+if(window.ResizeObserver)new ResizeObserver(()=>resize()).observe(cv);
+resize();
 
 // ---------- design system: drawing ----------
 const rnd=(a,b)=>a+Math.random()*(b-a), TAU=Math.PI*2, pick=a=>a[Math.floor(Math.random()*a.length)];
@@ -189,11 +195,12 @@ function segDist(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;let t=
 const shadeCache={};
 function darken(hex,a){const k=hex+a;if(shadeCache[k])return shadeCache[k];const n=parseInt(hex.slice(1),16);const r=(n>>16)*(1-a)|0,g=(n>>8&255)*(1-a)|0,b=(n&255)*(1-a)|0;return shadeCache[k]='rgb('+r+','+g+','+b+')'}
 // Every filled sticker shape: bottom-right cel shade + thick ink outline
-function shape(p,f,sz){if(f){ctx.save();if(f[0]==='#'&&f.length===7&&sz>11){ctx.clip(p);ctx.fillStyle=darken(f,.2);ctx.fill(p);const o=clamp(sz*.15,2,8);ctx.translate(-o,-o);ctx.fillStyle=f;ctx.fill(p)}else{ctx.fillStyle=f;ctx.fill(p)}ctx.restore()}ctx.stroke(p)}
-function circle(x,y,r,f){const p=new Path2D();p.arc(x,y,Math.max(.1,r),0,TAU);shape(p,f,r)}
-function ellipse(x,y,rx,ry,f,rot){const p=new Path2D();p.ellipse(x,y,Math.max(.1,rx),Math.max(.1,ry),rot||0,0,TAU);shape(p,f,Math.min(rx,ry))}
-function box(x,y,w,h,f,r){const p=new Path2D();if(p.roundRect)p.roundRect(x,y,w,h,Math.min(r==null?8:r,Math.abs(w)/2,Math.abs(h)/2));else p.rect(x,y,w,h);shape(p,f,Math.min(Math.abs(w),Math.abs(h))/2)}
-function poly(pts,f){const p=new Path2D();let a=1e9,b=-1e9,c=1e9,d=-1e9;pts.forEach((q,i)=>{i?p.lineTo(q[0],q[1]):p.moveTo(q[0],q[1]);a=Math.min(a,q[0]);b=Math.max(b,q[0]);c=Math.min(c,q[1]);d=Math.max(d,q[1])});p.closePath();shape(p,f,Math.min(b-a,d-c)/2)}
+function shape(p,f,sz,lit){if(f){if(lit&&sz>11&&f[0]==='#'&&f.length===7){ctx.fillStyle=darken(f,.2);ctx.fill(p);ctx.fillStyle=f;ctx.fill(lit())}else{ctx.fillStyle=f;ctx.fill(p)}}ctx.stroke(p)}
+function circle(x,y,r,f){r=Math.max(.1,r);const p=new Path2D();p.arc(x,y,r,0,TAU);shape(p,f,r,()=>{const q=new Path2D();q.arc(x-r*.1,y-r*.1,r*.87,0,TAU);return q})}
+function ellipse(x,y,rx,ry,f,rot){rx=Math.max(.1,rx);ry=Math.max(.1,ry);const p=new Path2D();p.ellipse(x,y,rx,ry,rot||0,0,TAU);const m=Math.min(rx,ry);shape(p,f,m,()=>{const q=new Path2D();q.ellipse(x-m*.1,y-m*.1,rx-m*.13,ry-m*.13,rot||0,0,TAU);return q})}
+function box(x,y,w,h,f,r){const rad=Math.min(r==null?8:r,Math.abs(w)/2,Math.abs(h)/2);const p=new Path2D();if(p.roundRect)p.roundRect(x,y,w,h,rad);else p.rect(x,y,w,h);const sz=Math.min(Math.abs(w),Math.abs(h))/2,o=clamp(sz*.15,2,8);
+ shape(p,f,w>0&&h>0?sz:0,()=>{const q=new Path2D();if(q.roundRect)q.roundRect(x,y,w-o,h-o,Math.min(rad,(w-o)/2,(h-o)/2));else q.rect(x,y,w-o,h-o);return q})}
+function poly(pts,f){const p=new Path2D();let a=1e9,b=-1e9,c=1e9,d=-1e9;pts.forEach((q,i)=>{i?p.lineTo(q[0],q[1]):p.moveTo(q[0],q[1]);a=Math.min(a,q[0]);b=Math.max(b,q[0]);c=Math.min(c,q[1]);d=Math.max(d,q[1])});p.closePath();const cx=(a+b)/2-(b-a)*.05,cy=(c+d)/2-(d-c)*.05;shape(p,f,Math.min(b-a,d-c)/2,()=>{const q=new Path2D();pts.forEach((pt,i)=>{const X=cx+(pt[0]-cx)*.86,Y=cy+(pt[1]-cy)*.86;i?q.lineTo(X,Y):q.moveTo(X,Y)});q.closePath();return q})}
 function flat(fn,f){ctx.beginPath();fn();ctx.closePath();if(f){ctx.fillStyle=f;ctx.fill()}ctx.stroke()}
 function line(a,b,c,d,w,col){ctx.save();if(w)ctx.lineWidth=w;if(col)ctx.strokeStyle=col;ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,d);ctx.stroke();ctx.restore()}
 function gloss(x,y,rx,ry,rot){ctx.save();ctx.fillStyle='rgba(255,255,255,.8)';ctx.beginPath();ctx.ellipse(x,y,rx,ry,rot==null?-.6:rot,0,TAU);ctx.fill();ctx.restore()}
@@ -221,7 +228,9 @@ function face(x,y,s,mood,lx,ly){ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx
 // Backgrounds: one strong colour per game + restrained tonal pattern
 function backdrop(c,pat,cx,cy){ctx.fillStyle=c;ctx.fillRect(0,-1200,W,H+1200);ctx.save();
   if(pat==='burst'){ctx.translate(cx==null?180:cx,cy==null?300:cy);ctx.rotate(RM?0:clock*.06);ctx.fillStyle='rgba(255,255,255,.14)';ctx.beginPath();for(let i=0;i<18;i++){ctx.moveTo(0,0);ctx.arc(0,0,900,i/18*TAU,(i+.5)/18*TAU);ctx.closePath()}ctx.fill()}
-  else if(pat==='dots'){ctx.fillStyle='rgba(23,18,31,.10)';ctx.beginPath();for(let y=-592,r=0;y<H;y+=20,r++)for(let x=(r%2)*10;x<W+10;x+=20){const rr=1.2+2.6*clamp(y/H,0,1);ctx.moveTo(x+rr,y);ctx.arc(x,y,rr,0,TAU)}ctx.fill()}
+  else if(pat==='dots'){if(!dotsLayer){dotsLayer=document.createElement('canvas');dotsLayer.width=cv.width;dotsLayer.height=cv.height;const x=dotsLayer.getContext('2d');x.setTransform(dpr*scale,0,0,dpr*scale,dpr*ox,dpr*oy);
+      x.fillStyle='rgba(23,18,31,.10)';x.beginPath();const top=-oy/scale-20;for(let y=8-Math.ceil((8-top)/20)*20,r=0;y<H;y+=20,r++)for(let xx=(Math.abs(Math.round(y/20))%2)*10;xx<W+10;xx+=20){const rr=1.2+2.6*clamp(y/H,0,1);x.moveTo(xx+rr,y);x.arc(xx,y,rr,0,TAU)}x.fill()}
+    ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(dotsLayer,0,0)}
   else if(pat==='stripes'){ctx.fillStyle='rgba(255,255,255,.11)';ctx.rotate(-.5);for(let i=-20;i<20;i++)ctx.fillRect(i*48+(RM?0:(clock*10)%48),-400,22,1600)}
   else if(pat==='clouds'){ctx.fillStyle='rgba(255,255,255,.55)';const cl=(x,y,s)=>{ctx.beginPath();ctx.arc(x,y,22*s,0,TAU);ctx.arc(x+24*s,y-10*s,26*s,0,TAU);ctx.arc(x+50*s,y,20*s,0,TAU);ctx.rect(x,y,50*s,20*s);ctx.fill()};const d=RM?0:(clock*8)%460;cl(40+d-100,120,1);cl(240+d*.6-200,230,.8);cl(120-d*.4+60,470,1.1)}
   ctx.restore()}
@@ -818,7 +827,7 @@ function render(){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=INK;ctx.fillRect(0
  else if(mode==='go'){backdrop(C.mt,'burst',180,290);const k=backOut(goT*4);ctx.save();ctx.translate(180,290);ctx.scale(k,k);ctx.rotate(-.1);star(0,0,120,C.mt,12,.7);ctx.restore();text('GO!',180,290,Math.max(1,72*k),C.white,-.1);drawTimer()}
  else drawMenuBg();
  ctx.restore()}
-function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;clock+=dt;if(shakeT>0)shakeT=Math.max(0,shakeT-dt);stepFx(dt);
+function frame(now){if(cv.clientWidth!==cssW||cv.clientHeight!==cssH)resize();const dt=Math.min(.05,(now-last)/1000);last=now;clock+=dt;if(shakeT>0)shakeT=Math.max(0,shakeT-dt);stepFx(dt);
  if(mode==='play'&&G){G.t+=dt;const gd=dt*run.speed;G.s.T+=gd;if(G.def.update)G.def.update(G.s,gd,G);
   if(!G.res&&G.t>=G.dur){G.def.timeoutWin?G.win():G.lose('TOO SLOW!')}if(G.res&&G.t>=G.endAt)finish()}
  else if(mode==='banner'){bannerT+=dt;if(bannerT>1.2)startNext()}
