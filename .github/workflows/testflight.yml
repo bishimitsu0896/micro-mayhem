@@ -34,7 +34,13 @@ jobs:
       - name: Write the App Store Connect API key
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey.p8"
+          KEY="$ASC_PRIVATE_KEY"
+          # Accept the key with or without its BEGIN/END lines.
+          if ! printf '%s' "$KEY" | grep -q "BEGIN PRIVATE KEY"; then
+            BODY=$(printf '%s' "$KEY" | tr -d ' \r\n\t')
+            KEY=$(printf -- '-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----' "$(printf '%s' "$BODY" | fold -w 64)")
+          fi
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/keys/AuthKey.p8"
           echo "KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
 
       - name: Look up the team ID

@@ -9,10 +9,18 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 const API = 'https://api.appstoreconnect.apple.com/v1';
-const { ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY } = process.env;
+const { ASC_ISSUER_ID, ASC_KEY_ID } = process.env;
+let { ASC_PRIVATE_KEY } = process.env;
 if (!ASC_ISSUER_ID || !ASC_KEY_ID || !ASC_PRIVATE_KEY) {
   console.error('Missing ASC_ISSUER_ID, ASC_KEY_ID or ASC_PRIVATE_KEY repository secrets.');
   process.exit(1);
+}
+// Accept the key with or without its BEGIN/END lines (pasting just the middle of the .p8 is a common slip).
+ASC_PRIVATE_KEY = ASC_PRIVATE_KEY.replace(/\\n/g, '\n').trim();
+if (!ASC_PRIVATE_KEY.includes('BEGIN PRIVATE KEY')) {
+  const body = ASC_PRIVATE_KEY.replace(/\s+/g, '');
+  ASC_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----`;
+  console.log('Note: added the missing BEGIN/END lines to the private key.');
 }
 const cfg = JSON.parse(fs.readFileSync('store/setup.json', 'utf8'));
 
