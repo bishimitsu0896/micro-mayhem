@@ -16,12 +16,28 @@ if (!ASC_ISSUER_ID || !ASC_KEY_ID || !ASC_PRIVATE_KEY) {
 }
 const cfg = JSON.parse(fs.readFileSync('store/setup.json', 'utf8'));
 
+// Shape check on the secrets (never prints the values), so a mix-up is easy to spot.
+{
+  const iss = ASC_ISSUER_ID.trim(), kid = ASC_KEY_ID.trim(), pk = ASC_PRIVATE_KEY.replace(/\\n/g, '\n').trim();
+  const checks = [
+    ['ASC_ISSUER_ID looks like a UUID (8-4-4-4-12)', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(iss), `length ${iss.length}`],
+    ['ASC_KEY_ID is 10 letters/digits', /^[A-Z0-9]{10}$/.test(kid), `length ${kid.length}`],
+    ['ASC_PRIVATE_KEY starts with -----BEGIN PRIVATE KEY-----', pk.startsWith('-----BEGIN PRIVATE KEY-----'), `length ${pk.length}`],
+    ['ASC_PRIVATE_KEY ends with -----END PRIVATE KEY-----', pk.endsWith('-----END PRIVATE KEY-----'), `${pk.split('\n').length} lines`],
+  ];
+  let keyOk = true;
+  try { crypto.createPrivateKey(pk); } catch { keyOk = false; }
+  checks.push(['ASC_PRIVATE_KEY parses as a private key', keyOk, '']);
+  for (const [label, ok, info] of checks) console.log(`${ok ? 'OK  ' : 'BAD '} ${label} ${ok ? '' : '(' + info + ')'}`);
+  if (/^AuthKey_/i.test(kid)) console.log('BAD  ASC_KEY_ID should be just the 10-character ID, without "AuthKey_"');
+}
+
 function token() {
   const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
-  const head = b64({ alg: 'ES256', kid: ASC_KEY_ID, typ: 'JWT' });
-  const body = b64({ iss: ASC_ISSUER_ID, iat: now, exp: now + 15 * 60, aud: 'appstoreconnect-v1' });
-  const key = crypto.createPrivateKey(ASC_PRIVATE_KEY.replace(/\\n/g, '\n'));
+  const head = b64({ alg: 'ES256', kid: ASC_KEY_ID.trim(), typ: 'JWT' });
+  const body = b64({ iss: ASC_ISSUER_ID.trim(), iat: now, exp: now + 15 * 60, aud: 'appstoreconnect-v1' });
+  const key = crypto.createPrivateKey(ASC_PRIVATE_KEY.replace(/\\n/g, '\n').trim());
   const sig = crypto.sign('sha256', Buffer.from(`${head}.${body}`), { key, dsaEncoding: 'ieee-p1363' });
   return `${head}.${body}.${sig.toString('base64url')}`;
 }
