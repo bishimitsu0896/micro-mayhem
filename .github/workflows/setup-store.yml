@@ -15,5 +15,5 @@ jobs:
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY || secrets.ASC_PRIVATE_SECRET }}
         run: node scripts/setup-store.mjs
