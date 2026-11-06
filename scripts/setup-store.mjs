@@ -32,11 +32,14 @@ const cfg = JSON.parse(fs.readFileSync('store/setup.json', 'utf8'));
   if (/^AuthKey_/i.test(kid)) console.log('BAD  ASC_KEY_ID should be just the 10-character ID, without "AuthKey_"');
 }
 
-function token() {
+let keyKind = 'team';
+function token(kind = keyKind) {
   const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
   const head = b64({ alg: 'ES256', kid: ASC_KEY_ID.trim(), typ: 'JWT' });
-  const body = b64({ iss: ASC_ISSUER_ID.trim(), iat: now, exp: now + 15 * 60, aud: 'appstoreconnect-v1' });
+  const body = b64(kind === 'team'
+    ? { iss: ASC_ISSUER_ID.trim(), iat: now, exp: now + 15 * 60, aud: 'appstoreconnect-v1' }
+    : { sub: 'user', iat: now, exp: now + 15 * 60, aud: 'appstoreconnect-v1' });
   const key = crypto.createPrivateKey(ASC_PRIVATE_KEY.replace(/\\n/g, '\n').trim());
   const sig = crypto.sign('sha256', Buffer.from(`${head}.${body}`), { key, dsaEncoding: 'ieee-p1363' });
   return `${head}.${body}.${sig.toString('base64url')}`;
@@ -134,6 +137,20 @@ async function ensureLeaderboard(app) {
 }
 
 async function main() {
+  // Work out whether this is a Team key or an Individual key.
+  const probe = async kind => (await fetch(`${API}/apps?limit=1`, { headers: { Authorization: `Bearer ${token(kind)}` } })).status;
+  const teamStatus = await probe('team');
+  if (teamStatus === 401) {
+    const userStatus = await probe('user');
+    if (userStatus === 200) {
+      keyKind = 'user';
+      console.log('::warning::This is an Individual API key. It works for some things, but builds need a Team key (Users and Access > Integrations > Team Keys, Admin access).');
+    } else {
+      throw new Error(`Apple rejected the key as both a Team key (${teamStatus}) and an Individual key (${userStatus}). Check that ASC_KEY_ID matches the downloaded AuthKey_<KEY ID>.p8 file, that the key has not been revoked, and that ASC_ISSUER_ID is the Issuer ID from the Team Keys page.`);
+    }
+  } else {
+    console.log(`Team key accepted (${teamStatus}).`);
+  }
   await ensureBundleId();
   const apps = await api('GET', `/apps?filter[bundleId]=${encodeURIComponent(cfg.bundleId)}`);
   const app = (apps.data || [])[0];
